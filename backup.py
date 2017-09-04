@@ -59,9 +59,10 @@ def callCommand(commandInput):
 vmList = []
 
 class vmItem:
-    def __init__(self, name):
+    def __init__(self, name, uuid):
         self.name = name
-        isStarted = False
+        self.isStarted = False
+        self.uuid = uuid
         
     
 
@@ -98,42 +99,60 @@ def getVMList():
     
     output = str(output)
     print(output)
-    #output = output.split('\\n')
+    output = output[0].split('\\n')
     
     #what is the output? filter down to just the names of the VMs
     
     #can I see that the VM is running in this step?
     
-    for vm in output:
-        v = vmItem(vm)
+    for outputItem in output:
+        
+        item = outputItem.split('" {')
+        
+        print(item)
+        
+        item[0] = item[0].strip(['"','{', '}'])
+        print(item[0])
+        item[1] = item[1].strip(['"','{', '}'])
+        print(item[1])
+        
+        
+        v = vmItem(item[0],item[1])
         vmList.append(v)
     
-    return
 
 def getRunningVMList():
     
     runningVMList = []
     
-    command = 'vboxmanage list runningvms'
+    command = ['vboxmanage', 'list', 'runningvms']
     
     output = callCommand(command)
     
     output = str(output)
     print(output)
-    #output = output.split('\\n')
+    output = output[0].split('\\n')
     
     #what is the output? filter down to just the names of the VMs
     
     for outputItem in output:
+    
+        item = outputItem.split('" {')
+        
+        item[0] = item[0].strip(['"','{', '}'])
+        item[1] = item[1].strip(['"','{', '}'])
+        
         for vm in vmList:
-            if vm.name == outputItem:
+            if vm.name == item[0]:
                 vm.isRunning = True
+        
+        
 
 def getSnapshotList():
     #snapshotList = subprocess.call('VBoxManage snapshot list')
     #snapshotList = subprocess.call(['VBoxManage snapshot list', '--details'])
     
-    command = ['VBoxManage snapshot list', '--details']
+    command = ['VBoxManage', 'snapshot', 'list', '--details']
     
     output = callCommand(command)
 
@@ -149,31 +168,31 @@ def checkNeedsSnapshot():
     
     return needsSnapshot
     
-def takeSnapshot():
+def takeSnapshot(vm):
     #take snapshot, name it something with date in it (to be used in lookup?)
     #snapshotList = subprocess.call('VBoxManage snapshot list')
     
-    command = ['VBoxManage snapshot list', '--details']
+    command = ['VBoxManage', 'snapshot', 'list', '--details']
     
     output = callCommand(command)
     
     
-def backupVM():
+def backupVM(vm):
     #rsync it to a remote location (what type of backup, incremental?)
     #remove older backups?
     print("hello world")
     
-def powerOffVM():
+def powerOffVM(vm):
     #subprocess.call('VBoxManage controlvm' + vm + 'acpipowerbutton')
     
-    command = 'VBoxManage controlvm' + vm + 'acpipowerbutton'
+    command = ['VBoxManage', 'controlvm', vm.name, 'acpipowerbutton']
     
     output = callCommand(command)
     
-def startVM():
+def startVM(vm):
     #subprocess.call('VBoxManage startvm' + vm)
     
-    command = 'VBoxManage startvm' + vm
+    command = ['VBoxManage','startvm', vm.name]
     
     output = callCommand(command)
     
