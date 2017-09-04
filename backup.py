@@ -91,7 +91,8 @@ def printDF():
 
 def getVMList():
     
-    command = 'vboxmanage list vms'
+    #command = 'vboxmanage list vms'
+    command = ['vboxmanage', 'list', 'vms']
     
     output = callCommand(command)
     
