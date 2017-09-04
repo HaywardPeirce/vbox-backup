@@ -149,7 +149,8 @@ def checkNeedsSnapshot():
     
     #loop through each snapshot, check if any more recent than min date between snapshots
     for snapshot in snapshotList:
-        if snapshot.date -  < 
+        if (today.date - snapshot.date) < inputRetention:
+            needsSnapshot = True
     
     return needsSnapshot
     
@@ -165,6 +166,7 @@ def takeSnapshot():
 def backupVM():
     #rsync it to a remote location (what type of backup, incremental?)
     #remove older backups?
+    print("hello world")
     
 def powerOffVM():
     #subprocess.call('VBoxManage controlvm' + vm + 'acpipowerbutton')
