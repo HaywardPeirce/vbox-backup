@@ -111,9 +111,9 @@ def getVMList():
         
         print(item)
         
-        item[0] = item[0].strip(['"','{', '}'])
+        item[0] = item[0].strip('"')
         print(item[0])
-        item[1] = item[1].strip(['"','{', '}'])
+        item[1] = item[1].strip('}')
         print(item[1])
         
         
@@ -139,8 +139,10 @@ def getRunningVMList():
     
         item = outputItem.split('" {')
         
-        item[0] = item[0].strip(['"','{', '}'])
-        item[1] = item[1].strip(['"','{', '}'])
+        item[0] = item[0].strip('"')
+        print(item[0])
+        item[1] = item[1].strip('}')
+        print(item[1])
         
         for vm in vmList:
             if vm.name == item[0]:
