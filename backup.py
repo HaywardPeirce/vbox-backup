@@ -127,12 +127,6 @@ def getRunningVMList():
         for vm in vmList:
             if vm.name == outputItem:
                 vm.isRunning = True
-    
-    for vm in output:
-        v = vmItem(vm)
-        runningVMList.append(v)
-    
-    runningVMList = subprocess.call('vboxmanage list runningvms')
 
 def getSnapshotList():
     #snapshotList = subprocess.call('VBoxManage snapshot list')
@@ -184,9 +178,9 @@ def startVM():
     
 def whichVMs():
     
-    vmList = getVMList()
+    getVMList()
     
-    runningVMList = getRunningVMList()
+    getRunningVMList()
     
     #append items to vmList
     
