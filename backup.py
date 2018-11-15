@@ -1,12 +1,23 @@
-import subprocess, sys, argparse, re, time
+# -*- coding: utf-8 -*-
 
+from __future__ import (absolute_import, division, print_function, unicode_literals)
+from builtins import *
+
+import subprocess, sys, argparse, re, datetime, virtualbox
+
+vbox = virtualbox.VirtualBox()
 
 #parse input arguments -m, method, -l, limit
 parser = argparse.ArgumentParser()
 
 #add arguments for time between snapshots, remote snapshot retention policy, remote location to store
 parser.add_argument('-v','--vm', nargs='+', help='Which VMs to process')
-parser.add_argument('-f','--file', help='path to file containing list of VM names to process')
+parser.add_argument('-f','--file', help='Path to file containing list of VM names to process')
+parser.add_argument('-t','--time', help='Time, in seconds, between when snapshots should be taken')
+parser.add_argument('-a', '--all', action='store_true', help='Boolean, whether to process all vms')
+
+#TODO: add in -a all arguement, add an arguement for time between snapshots. configure it so you cant pass in all with specific other vms to process
+
 
 # Use like:
 # python arg.py -l 1234 2345 3456 4567
@@ -16,10 +27,10 @@ args = parser.parse_args()
 
 inputVMList = []
 
+#the time allowed before another snapshot should be taken (in seconds)
+timeBetweenSnapshots = 604800
+
 print(args)
-
-
-
 
 if args.vm:
     for value in args.vm:
@@ -29,281 +40,239 @@ if args.vm:
 if args.file:
     file = args.file
     print("File name: ", file)
-    #lookup list of VMs in file, check they haven't already been added to input list, append them to input list
+    #TODO: lookup list of VMs in file, check they haven't already been added to input list, append them to input list
+if args.time:
+    timeBetweenSnapshots = args.time
+
 #no CLI input was provided
 if not args.file and not args.vm:
     #look for list in file (should you have to pass in a file name?)
     print("No CLI arguments")
-    #readVMFile()
+
+    #TODO: quit here as there is nothing to do
 
 #print(inputVMList)
-
-def callCommand(commandInput):
-    try:
-        command = subprocess.Popen(commandInput, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-        output = command.communicate()
-
-        return output
-
-    except:
-        e = sys.exc_info()[0]
-        print("Running command `", commandInput, "` returned the following error: ", e)
-
-
-
-#find list of VMs to process backup for
-
-#lookup vms from file? accept parameter?
 
 vmList = []
 
 class vmItem:
-    def __init__(self, name, uuid):
+    def __init__(self, name, uuid, initialState):
         self.name = name
-        self.isStarted = False
+        self.initialState = initialState
+        self.isRunning = initialState
         self.uuid = uuid
+        #TODO: probably want to add in details about when last snapshot was taken
+
+    def helloWorld(self):
+        print("This VM is called: {}".format(self.name))
+
+    def isRunning(self):
+        print("Checking whether this VM is running")
+
+    #Check whether the current VM is due for a new snapshot
+    def needsSnapshot(self):
+        #print("We should take a snapshot")
+
+        vm = vbox.find_machine(self.name)
+
+        print("Found VM {}".format(vm.name))
+
+        with vm.create_session() as session:
+            print("Session created for VM {}".format(vm.name))
+
+            #print(session.machine.current_snapshot)
+            #will be null if no current snapshot
+            if not session.machine.current_snapshot:
+                print("There are current no snapshots for {}".format(vm.name))
+                return True
+            else:
+                snapshotTime = session.machine.current_snapshot.time_stamp
+                print("Current snapshot for {} was taken {}".format(vm.name, snapshotTime))
+
+                # TODO: current_state_modified
+                # Get bool value for 'currentStateModified' Returns true if the current state of the machine is
+                # not identical to the state stored in the current snapshot.
+
+                #another snapshot is needed
+                if snapshotTime > timeBetweenSnapshots:
+                    print('It has been {} seconds since the last snapshot. Another is required'.format(snapshotTime - timeBetweenSnapshots))
+                    return True
+                else: return False
+
+    def takeSnapshot(self):
+        vm = vbox.find_machine(self.name)
+
+        with vm.create_session() as session:
+            print("Session created for VM {}".format(vm.name))
+
+            #TODO: configure takeing a snapshot
+            #command = ['VBoxManage', 'snapshot', 'take', vm.name + ' - ' + date.current,'--details']
+
+            currentTime = datetime.datetime.now()
+            snapshotName = vm.name + ' - snapshot - ' + str(currentTime.year) + '-' + str(currentTime.month) + '-' + str(currentTime.day)
+
+            try:
+                print("Taking snapshot of {}...".format(vm.name))
+                progress = session.machine.take_snapshot(snapshotName,'',True)
+
+            except Exception as e:
+                #print("Failed to create directory for saved state file.")
+                print("Unknown error attempting to take a snapshot of VM {}: {}".format(vm.name, e))
+                return
+            except:
+                e = sys.exc_info()[0]
+                print("Unknown error attempting to take a snapshot of VM {}: {}".format(vm.name, e))
+
+            #TODO: check that the VM snapshot was taken successfully. can I validate it? is it now the current snapshot?
+
+            #TODO; probably want to migrate away from `process[0]` being referenced explicitly in the long run
+            #print("Snapshot progress: {}".format(progress[0].percent()))
+
+            #TODO: probably want to use wait_for_completion(timeout=-1)
+
+            try:
+                print("Attempting to wait for process completion")
+                progress[0].wait_for_completion(-1)
+                print('process has now been completed')
+
+                #check if the current snapshot state is the same as the VM (not modified), this means the latest snapshot represents the current state of the VM
+                if not session.machine.current_state_modified:
+                    print("The current state of the VM {} is the same as the current snapshot. This means the snapshot that was taken was successful".format(vm.name))
+                    return
+
+            except:
+                print("Failed to wait for snapshot completion")
 
 
+    def startVM(self):
+        vm = vbox.find_machine(self.name)
+        print("Found VM {}".format(vm.name))
+
+        with vm.create_session() as session:
+            print("Session created for VM {}".format(vm.name))
+
+            print("Starting VM {}".format(vm.name))
+
+            try:
+                #session.machine.launch_vm_process()
+                progress = vm.launch_vm_process(session, 'headless', '')
+            except:
+                e = sys.exc_info()[0]
+                print("Unknown error attempting to start VM {}: {}".format(vm.name, e))
+
+            #TODO: check that VM is now started
+
+            try:
+                print("Attempting to wait for process completion")
+                progress.wait_for_completion(-1)
+                print('process has now been completed')
+
+                #TODO: check that the VM is actaually running
+                return
+
+            except:
+                e = sys.exc_info()[0]
+                print("Failed to wait for vm {} to start: {}".format(vm.name, e))
 
 
-def printDF():
+    def stopVM(self):
+        vm = vbox.find_machine(self.name)
+        print("Found VM {}".format(vm.name))
 
-    command = ['df', '-h']
+        with vm.create_session() as session:
+            print("Session created for VM {}".format(vm.name))
 
-    output = callCommand(command)
+            #TODO: is there a cleaner way to poweroff the machine? maybe by logging in?
+            #Safely Poweroff the VM in question (do we have to???):`VBoxManage controlvm <vm> acpipowerbutton`, is there a way to check that it has been powered off? wait x seconds? maybe move on to force shutdown
+            print("Stopping VM {}".format(vm.name))
+            try:
+                #TODO: maybe should use power_down() function
+                #session.console.power_button()
+                progress = session.console.power_down()
+            except VBoxErrorPdmError as e:
+                print("Unable to perform controlled power off")
+            except:
+                e = sys.exc_info()[0]
+                print("Unknown error attempting to power off VM {}: {}".format(vm.name, e))
+
+            #TODO: check that the VM is now stopped
+            #vmState = str(vm.state)
+            #print("The VM {} is current {}".format(vm.name, vmState))
+            try:
+                print("Attempting to wait for shutdown completion")
+                progress.wait_for_completion(-1)
+                print('Shutdown has now been completed')
+
+            except:
+                e = sys.exc_info()[0]
+                print("Failed to wait for vm {} to start: {}".format(vm.name, e))
+
+    #def remoteBackupVM():
+        #TODO: rsync it to a remote location (what type of backup, incremental?)
+        #remove older backups?
 
 
-    output = str(output)
-    #print(str(output))
-    output = output.split('\\n')
-    #print(output)
-    #print('Type: ', type(output))
-    #print(output[0])
-
-
-#get a list of VMs in VB
+#get a list of VMs in VirtualBox
 def getVMList():
 
     outputList = []
     listIsEmpty = True
 
-    command = ['vboxmanage', 'list', 'vms']
+    #TODO: loop through the list of inputted VMs and only add the ones on the list to the array
 
-    output = callCommand(command)
+    #loop through the list of VMs
+    for vm in vbox.machines:
+        #print(vm.name, ' ', vm.id_p, ' ', vm.state)
 
-    output = output[0]
-    #print(output)
+        #TODO: add in lookup for running vm here
 
-    output = output.decode('utf-8')
-    output = output.rstrip("\n")
-    output = output.split('\n')
-    #print(output)
-    #check that there are items in the list of VMs
-    for item in output:
-        if item:
-            name = re.search(r'"([^"]*)"', item)
-            name = name.group(1).strip('"')
-            print("name: ", name)
+        for inputVM in inputVMList:
 
-            uuid = re.search(r'{([^"]*)}', item)
-            uuid = uuid.group(1).rstrip('}')
-            uuid = uuid.lstrip('{')
-            print("uuid: ", uuid)
+            #keep processing if the VM being looked at was requested
+            if vm.name == inputVM:
 
-            v = vmItem(name,uuid)
-            vmList.append(v)
+                vmState = str(vm.state)
+                #print(type(vmState))
+                if vmState != 'Running':
+                    print('VM {} is not running'.format(vm.name))
+                    isRunning = False
+                else:
+                    print('VM {} is running'.format(vm.name))
+                    isRunning = True
 
-    #output = str(output[0])
-    #print(output)
-    #print(type(output))
-    #strip off the extra characters on the left and right
-    #output = output.lstrip("b'")
-    #output = output.rstrip("\\n'")
-    #print(output)
-
-    #split the string at the new line to seperate entries
-    #output = output.split('\\n')
-
-    #loop through each of the items in the list of returned entries
-    # for outputItem in outputList:
-    #     print("outputItem: ", outputItem)
-    #
-    #     #pull the name of the VM out from within the quotes
-    #     name = re.search(r'"([^"]*)"', outputItem)
-    #     name = name.group(1).strip('"')
-    #     #print("name: ", name)
-    #
-    #     #print("outputItem: ", outputItem)
-    #
-    #     #pull the uuid out from within the {}
-    #     uuid = re.search(r'{([^"]*)}', outputItem)
-    #     uuid = uuid.group(1).rstrip('}')
-    #     uuid = uuid.lstrip('{')
-    #     #print("uuid: ", uuid)
-    #
-    #     v = vmItem(name,uuid)
-    #     vmList.append(v)
-
-
-def getRunningVMList():
-
-    outputList = []
-    listIsEmpty = True
-
-    runningVMList = []
-
-    command = ['vboxmanage', 'list', 'runningvms']
-
-    output = callCommand(command)
-
-    output = output[0]
-    print(output)
-
-    output = output.decode('utf-8')
-    output = output.rstrip("\n")
-    output = output.split('\n')
-    print(output)
-    print(type(output))
-    #check that there are items in the list of VMs
-    for item in output:
-        if item:
-            name = re.search(r'"([^"]*)"', item)
-            name = name.group(1).strip('"')
-            print("name: ", name)
-
-            for vm in vmList:
-                if vm.name == name:
-
-                    vm.isRunning = True
-
-
-def getSnapshotList(vm):
-    command = ['VBoxManage', 'snapshot', vm.name ,'list', '--details', '--machinereadable']
-
-    output = callCommand(command)
-
-    print('getSnapshotList output:')
-    print(output)
-
-    output = output[0]
-
-    output = output.decode('utf-8')
-    output = output.rstrip('\n')
-    output = output.split('\n')
-
-    print(output)
-    print(type(output))
-
-    snapshotList = []
-
-    for snapshot in output:
-        print("snapshot:")
-        print(snapshot)
-        snapshot = snapshot.rstrip('"')
-        snapshot = snapshot.split('="')
-        print(snapshot)
-
-        if snapshot[0] != "CurrentSnapshotUUID" or snapshot[0] != "CurrentSnapshotNode":
-            
-
-
-    return output
-
-def checkNeedsSnapshot(vm):
-    snapshotList = getSnapshotList(vm)
-
-    needsSnapshot = False
-
-    #if the response is `This machine does not have any snapshots` then it doesnt need a snaotshot
-
-    #loop through each snapshot, check if any more recent than min date between snapshots
-    for snapshot in snapshotList:
-        #if (today.date - snapshot.date) < inputRetention:
-        #    needsSnapshot = True
-        print("snapshot:")
-        print(snapshot)
-        snapshot = snapshot.rstrip('"')
-        snapshot = snapshot.split('="')
-        print(snapshot)
-
-    return needsSnapshot
-
-def takeSnapshot(vm):
-    #take snapshot, name it something with date in it (to be used in lookup?)
-    #snapshotList = subprocess.call('VBoxManage snapshot list')
-
-    command = ['VBoxManage', 'snapshot', 'take', vm.name + ' - ' + date.current,'--details']
-
-    output = callCommand(command)
-
-
-def backupVM(vm):
-    #rsync it to a remote location (what type of backup, incremental?)
-    #remove older backups?
-    print("hello world")
-
-def powerOffVM(vm):
-    #subprocess.call('VBoxManage controlvm' + vm + 'acpipowerbutton')
-
-    command = ['VBoxManage', 'controlvm', vm.name, 'acpipowerbutton']
-
-    output = callCommand(command)
-
-def startVM(vm):
-    #subprocess.call('VBoxManage startvm' + vm)
-
-    command = ['VBoxManage','startvm', vm.name]
-
-    output = callCommand(command)
-
-def whichVMs():
-
-    getVMList()
-
-    getRunningVMList()
-
-
+                v = vmItem(vm.name,vm.id_p, isRunning)
+                vmList.append(v)
 
 def main():
 
     #create a structure of available vms, mark each as running or not
-
-    whichVMs()
-
+    getVMList()
 
     for vm in vmList:
 
-        # only run through this is there are listed vm arguements
-        if inputVMList:
+        #print(vm.name)
+        #print(vm.initialState)
+        #print(vm.isRunning)
 
-            for inputvm in inputVMList:
+        #vm.helloWorld()
 
-                #keep going is this vm was listed as an arguement
-                if inputvm == vm.name:
-                    #look at what snapshots are listed for the VM, one proceed if one hasn't been taken since ??? `VBoxManage snapshot...`. Maybe use export? maybe include `--details`
+        #continue if the VM needs a snapshot
+        if vm.needsSnapshot():
 
-                    #print("Processing VM: ", vm.name)
+            print("The VM '{}' needs a new snapshot.".format(vm.name))
 
-                    #find last date? if statement to continue
-                    if checkNeedsSnapshot(vm):
+            if vm.isRunning:
+                vm.stopVM()
 
-                        print("The VM ", vm, " needs a new snapshot.")
+            #take snapshot
+            vm.takeSnapshot()
 
-                        #Safely Poweroff the VM in question (do we have to???):`VBoxManage controlvm <vm> acpipowerbutton`, is there a way to check that it has been powered off? wait x seconds? maybe move on to force shutdown
-                        #powerOffVM()
+            #the VM was started at the beggining of the process, but is not started now. This VM needs to be started.
+            if not vm.isRunning and vm.initialState:
+                vm.startVM()
 
-                        #take snapshot
-                        #takeSnapshot()
-
-
-
-                        #turn the vm back on again
-                        #startVM()
-
-                        #rsync it to a remote location (what type of backup, incremental?)
-                        #remove older backups?
-                        #backupVM()
+            #rsync the snapshot to a remote location
+            #backupVM()
 
 
 if __name__ == "__main__":
